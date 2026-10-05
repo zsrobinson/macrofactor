@@ -5,20 +5,43 @@ the owner's nutrition + workout data (read **and** write) through two surfaces
 over one shared core: a REST API and an MCP server.
 
 - **Repo:** `zsrobinson/macrofactor`
-- **Working branch:** `claude/charming-sagan-9wv0ud`
+- **Working branch:** `claude/adoring-ritchie-f7d8v3` (continues `claude/charming-sagan-9wv0ud`)
 - **Scope:** personal use, the owner's own data, unofficial (MacroFactor has no public API).
 
 ---
 
 ## Current status
 
-Scaffold is **complete, committed, and pushed** to the working branch. `npm install`
-succeeds and `tsc --noEmit` passes clean. **Nothing has run against the live backend
-yet** — that is blocked on two secrets (below).
+Validation probe **ran on 2026-10-05**. Result: **token refresh works; Firestore reads
+are denied (403).** Option B as designed is blocked at the data layer, not at auth.
+See "Probe results" below before doing anything else.
 
-The immediate next step for whoever picks this up is the **validation probe**, once
-the secrets are configured. Do not build out more collection logic before the probe,
-because its result can change the whole auth approach.
+---
+
+## Probe results (2026-10-05)
+
+| Step | Outcome |
+|---|---|
+| 1. Token refresh | ✅ **Works** — after one fix (below). Returns a 1h `idToken` (`aud=sbs-diet-app`, `sign_in_provider=password`, `email_verified=true`, RevenueCat entitlements present) and rotates the refresh token. Securetoken is **not** App Check–gated. |
+| 2. Read | ❌ **403 `Missing or insufficient permissions`** on every path tried: `users/{uid}` itself, `:listCollectionIds`, `scale/2025`, `scale/2026`, `nutrition`, `steps`, `food/{date}`, `workoutHistory`, `trainingProgram`, etc. |
+| 3. Write | ⏭️ Not attempted — reads are already denied the same way; a write probe would add nothing. |
+
+**The fix for step 1:** the captured API key is an **iOS-restricted** key. Without the
+header `X-Ios-Bundle-Identifier: com.sbs.diet` the refresh returns
+`403 API_KEY_IOS_APP_BLOCKED`. `TokenManager` now sends it (`iosBundleId` option,
+defaults to `com.sbs.diet`, confirmed via Apple's App Store lookup for id 1553503471).
+Firestore requests use only the bearer token, so they don't need the header.
+
+**Why we think step 2 is App Check, not paths/rules:**
+- A garbage bearer token gets **401** (unauthenticated), so our idToken *is* accepted.
+- Wrong project id gets a different, IAM-style 403. The project id is right.
+- The owner's **own** `users/{uid}` doc and `listCollectionIds` are denied. Owner-scoped
+  security rules would normally allow those, so a path/shape mismatch doesn't explain it.
+- With Firestore App Check enforcement turned on, a request without a valid
+  `X-Firebase-AppCheck` token is rejected as `PERMISSION_DENIED` before rules are
+  evaluated, which matches what we see.
+
+We are **not** forging or replaying App Check tokens (per the original scope).
 
 ---
 
@@ -135,8 +158,8 @@ Grounded in the reverse-engineered reference
 
 ## Open `TODO(verify)` — need a real token / real responses
 
-1. **auth.ts** — securetoken refresh not App Check–gated (the probe step 1).
-2. **Firestore writes** not separately App Check–gated (probe step 3).
+1. ~~**auth.ts** — securetoken refresh not App Check–gated~~ ✅ verified (needs iOS bundle header).
+2. **Firestore** — reads (and presumably writes) are denied with 403; most likely App Check enforcement. Blocks everything below.
 3. **`setDailyNutrition`** ⚠️ — the app computes nutrition dynamically; a manual write
    there may be recomputed/overwritten. Food logging is the real write path.
 4. **Food entry id format** — currently `String(Date.now())`; exact format unconfirmed.
@@ -148,9 +171,16 @@ Grounded in the reverse-engineered reference
 
 ## Next steps (in order)
 
-1. Owner captures token → sets the two env secrets.
-2. New session on this branch → run the validation probe → record results here.
-3. If Option B holds: tighten the `TODO(verify)` shapes against real responses; expand
-   any thin writers; add tests.
-4. If refresh is gated: pivot to Option C (automate the real attested client).
+1. ~~Owner captures token → sets the two env secrets.~~ Done.
+2. ~~Run the validation probe.~~ Done — see "Probe results".
+3. **Owner decision needed:** pick a data path that doesn't go through Firestore
+   without App Check:
+   - **Option C — drive the real attested client** (the app on a device or simulator,
+     automated). Heaviest, but read + write.
+   - **Export-based, read-only** — use MacroFactor's built-in data export and parse the
+     files. Cheap and clearly sanctioned, but manual and no writes.
+   - **Ask MacroFactor** whether there's an official/partner API or integration (e.g.
+     Apple Health sync covers weight/steps/nutrition totals as a read source).
+4. Keep the core (`TokenManager`, schemas, REST/MCP adapters). Swap the transport under
+   `MacroFactorClient` to the chosen path.
 5. Only after it works end-to-end: decide on a PR (not yet requested).

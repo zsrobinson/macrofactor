@@ -7,12 +7,16 @@
  * before expiry. The user id (`sub`) is decoded from the idToken JWT payload
  * so we can build `users/{uid}/...` document paths.
  *
- * ASSUMPTION — TODO(verify once a real token exists): the securetoken refresh
- * endpoint is NOT gated by Firebase App Check for this project. If it is, the
- * refresh call will return 403 and this flow needs an App Check token.
+ * Verified against the live backend: the securetoken refresh endpoint is NOT
+ * App Check–gated. The API key captured from the iOS app is, however,
+ * restricted to iOS clients, so the refresh must carry the app's bundle id in
+ * `X-Ios-Bundle-Identifier` (otherwise 403 API_KEY_IOS_APP_BLOCKED).
  */
 
 const SECURE_TOKEN_URL = "https://securetoken.googleapis.com/v1/token";
+
+/** MacroFactor's iOS bundle id (App Store id 1553503471). */
+const DEFAULT_IOS_BUNDLE_ID = "com.sbs.diet";
 
 /** Refresh this many ms before the token actually expires, to avoid races. */
 const REFRESH_SKEW_MS = 60_000;
@@ -37,12 +41,15 @@ interface CachedToken {
 export interface TokenManagerOptions {
   refreshToken: string;
   firebaseApiKey: string;
+  /** Sent as `X-Ios-Bundle-Identifier`; required by the iOS-restricted API key. */
+  iosBundleId?: string;
   /** Injectable for tests. Defaults to global fetch. */
   fetchImpl?: typeof fetch;
 }
 
 export class TokenManager {
   private readonly firebaseApiKey: string;
+  private readonly iosBundleId: string;
   private readonly fetchImpl: typeof fetch;
   private refreshToken: string;
   private cached: CachedToken | null = null;
@@ -52,6 +59,7 @@ export class TokenManager {
   constructor(opts: TokenManagerOptions) {
     this.refreshToken = opts.refreshToken;
     this.firebaseApiKey = opts.firebaseApiKey;
+    this.iosBundleId = opts.iosBundleId ?? DEFAULT_IOS_BUNDLE_ID;
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
@@ -94,7 +102,10 @@ export class TokenManager {
 
     const res = await this.fetchImpl(url, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Ios-Bundle-Identifier": this.iosBundleId,
+      },
       body: body.toString(),
     });
 
