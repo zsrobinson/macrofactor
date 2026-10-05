@@ -1,0 +1,33 @@
+{
+  "name": "macrofactor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal, unofficial TypeScript client for a MacroFactor (Stronger By Science) nutrition/workout account. REST + MCP servers over the reverse-engineered Firestore backend.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "macrofactor-rest": "bin/rest.ts",
+    "macrofactor-mcp": "bin/mcp.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "rest": "tsx bin/rest.ts",
+    "mcp": "tsx bin/mcp.ts",
+    "dev": "tsx watch bin/rest.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "dotenv": "^16.4.7",
+    "hono": "^4.6.14",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
